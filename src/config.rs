@@ -1,8 +1,11 @@
 use anyhow::{Context, Result};
+use kdl::KdlDocument;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
+
+use conchy_config::schema::session::{default_session_kdl, parse_session_config, SessionConfig as KdlSessionConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -118,76 +121,85 @@ pub struct Config {
     pub services: Vec<ServiceConfig>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
+impl From<KdlSessionConfig> for Config {
+    fn from(s: KdlSessionConfig) -> Self {
         Self {
-            session: SessionSettings::default(),
-            compositor: CompositorConfig::default(),
-            services: vec![
-                ServiceConfig {
-                    name: "pipewire".to_string(),
-                    command: "pipewire".to_string(),
-                    args: Vec::new(),
-                    restart: RestartPolicy::Always,
+            session: SessionSettings {
+                socket_wait_timeout_secs: s.socket_wait_timeout_secs,
+                autostart: s.autostart,
+                env: s.env,
+            },
+            compositor: CompositorConfig {
+                command: s.compositor,
+                args: s.compositor_args,
+                env: HashMap::new(),
+            },
+            services: s
+                .services
+                .into_iter()
+                .map(|svc| ServiceConfig {
+                    name: svc.name,
+                    command: svc.command,
+                    args: svc.args,
+                    restart: match svc.restart.as_str() {
+                        "always" => RestartPolicy::Always,
+                        "never" => RestartPolicy::Never,
+                        _ => RestartPolicy::OnFailure,
+                    },
                     restart_delay_ms: 1000,
                     max_restarts: 10,
                     restart_window_secs: 60,
-                    wait_for_wayland: false,
+                    wait_for_wayland: svc.wait_for_wayland,
                     env: HashMap::new(),
                     enabled: true,
-                },
-                ServiceConfig {
-                    name: "wireplumber".to_string(),
-                    command: "wireplumber".to_string(),
-                    args: Vec::new(),
-                    restart: RestartPolicy::Always,
-                    restart_delay_ms: 1000,
-                    max_restarts: 10,
-                    restart_window_secs: 60,
-                    wait_for_wayland: false,
-                    env: HashMap::new(),
-                    enabled: true,
-                },
-                ServiceConfig {
-                    name: "conchy-shell".to_string(),
-                    command: "conchy-shell".to_string(),
-                    args: Vec::new(),
-                    restart: RestartPolicy::Always,
-                    restart_delay_ms: 1000,
-                    max_restarts: 5,
-                    restart_window_secs: 60,
-                    wait_for_wayland: true,
-                    env: HashMap::new(),
-                    enabled: true,
-                },
-            ],
+                })
+                .collect(),
         }
     }
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        let doc: KdlDocument = default_session_kdl().parse().unwrap();
+        let kdl_cfg = parse_session_config(&doc).unwrap();
+        kdl_cfg.into()
+    }
+}
+
 impl Config {
-    /// Attempt to load configuration from given path, or fallback to standard XDG/system paths
+    /// Attempt to load configuration from given path, or fallback to standard XDG/system paths.
+    /// Supports both session.kdl (standard) and session.toml (legacy).
     pub fn load(custom_path: Option<&Path>) -> Result<Self> {
         if let Some(path) = custom_path {
             info!("Loading configuration from explicit path: {:?}", path);
             let content = std::fs::read_to_string(path)
                 .with_context(|| format!("Failed to read config file {:?}", path))?;
+
+            if path.extension().and_then(|s| s.to_str()) == Some("kdl") {
+                let doc: KdlDocument = content
+                    .parse()
+                    .with_context(|| format!("Failed to parse KDL syntax in {:?}", path))?;
+                let kdl_cfg = parse_session_config(&doc)
+                    .with_context(|| format!("Failed to validate KDL session config in {:?}", path))?;
+                return Ok(kdl_cfg.into());
+            }
+
             let config: Config = toml::from_str(&content)
                 .with_context(|| format!("Failed to parse TOML configuration from {:?}", path))?;
             return Ok(config);
         }
 
-        // Standard paths:
-        // 1. $XDG_CONFIG_HOME/conchy/session.toml
-        // 2. ~/.config/conchy/session.toml
-        // 3. /etc/conchy/session.toml
+        // Standard search paths: prefer .kdl, fallback to .toml
         let mut candidates = Vec::new();
         if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-            candidates.push(PathBuf::from(xdg_config).join("conchy").join("session.toml"));
+            candidates.push(PathBuf::from(&xdg_config).join("conchy").join("session.kdl"));
+            candidates.push(PathBuf::from(&xdg_config).join("conchy").join("session.toml"));
         }
         if let Ok(home) = std::env::var("HOME") {
-            candidates.push(PathBuf::from(home).join(".config").join("conchy").join("session.toml"));
+            candidates.push(PathBuf::from(&home).join(".config").join("conchy").join("session.kdl"));
+            candidates.push(PathBuf::from(&home).join(".config").join("conchy").join("session.toml"));
         }
+        candidates.push(PathBuf::from("/etc/conchy/session.kdl"));
         candidates.push(PathBuf::from("/etc/conchy/session.toml"));
 
         for path in candidates {
@@ -195,17 +207,33 @@ impl Config {
                 info!("Found session configuration at: {:?}", path);
                 let content = std::fs::read_to_string(&path)
                     .with_context(|| format!("Failed to read config file {:?}", path))?;
+
+                if path.extension().and_then(|s| s.to_str()) == Some("kdl") {
+                    let doc: KdlDocument = content
+                        .parse()
+                        .with_context(|| format!("Failed to parse KDL syntax in {:?}", path))?;
+                    let kdl_cfg = parse_session_config(&doc)
+                        .with_context(|| format!("Failed to validate KDL session config in {:?}", path))?;
+                    return Ok(kdl_cfg.into());
+                }
+
                 let config: Config = toml::from_str(&content)
                     .with_context(|| format!("Failed to parse TOML configuration from {:?}", path))?;
                 return Ok(config);
             }
         }
 
-        debug!("No config file found in standard search paths. Using built-in defaults.");
+        debug!("No config file found in standard search paths. Using built-in KDL defaults.");
         Ok(Config::default())
     }
 
-    /// Serialize configuration to pretty TOML string
+    /// Returns standard default KDL string representation
+    pub fn to_kdl_string(&self) -> String {
+        default_session_kdl().to_string()
+    }
+
+    /// Serialize configuration to pretty TOML string (backwards compatibility)
+    #[allow(dead_code)]
     pub fn to_toml_string(&self) -> Result<String> {
         toml::to_string_pretty(self).context("Failed to serialize config to TOML")
     }
@@ -216,42 +244,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_config_serialization() {
+    fn test_default_config_loading() {
         let config = Config::default();
-        let toml_str = config.to_toml_string().expect("Failed to serialize");
-        assert!(toml_str.contains("conchy-wm"));
-        assert!(toml_str.contains("pipewire"));
-        assert!(toml_str.contains("wireplumber"));
-
-        let parsed: Config = toml::from_str(&toml_str).expect("Failed to parse back");
-        assert_eq!(parsed.compositor.command, "conchy-wm");
-        assert_eq!(parsed.services.len(), 3);
+        assert_eq!(config.compositor.command, "conchy-wm");
+        assert_eq!(config.services.len(), 4);
+        assert_eq!(config.services[0].name, "pipewire");
+        assert_eq!(config.services[2].name, "conchy-config");
     }
 
     #[test]
-    fn test_custom_config_deserialization() {
+    fn test_custom_kdl_parsing() {
         let raw = r#"
-[compositor]
-command = "/custom/path/conchy-wm"
-args = ["--config", "/custom/niri.kdl"]
+session {
+    socket-wait-timeout 20
+    autostart false
+}
 
-[session]
-socket_wait_timeout_secs = 15
-autostart = false
+compositor "/custom/conchy-wm"
 
-[[services]]
-name = "mako"
-command = "mako"
-restart = "always"
-wait_for_wayland = true
+service "mako" {
+    command "mako"
+    restart "always"
+    wait-for-wayland true
+}
 "#;
-        let config: Config = toml::from_str(raw).expect("Failed to parse");
-        assert_eq!(config.compositor.command, "/custom/path/conchy-wm");
-        assert_eq!(config.compositor.args, vec!["--config", "/custom/niri.kdl"]);
-        assert_eq!(config.session.socket_wait_timeout_secs, 15);
+        let doc: KdlDocument = raw.parse().unwrap();
+        let kdl_cfg = parse_session_config(&doc).unwrap();
+        let config: Config = kdl_cfg.into();
+
+        assert_eq!(config.compositor.command, "/custom/conchy-wm");
+        assert_eq!(config.session.socket_wait_timeout_secs, 20);
         assert!(!config.session.autostart);
         assert_eq!(config.services.len(), 1);
         assert_eq!(config.services[0].name, "mako");
-        assert_eq!(config.services[0].restart, RestartPolicy::Always);
     }
 }

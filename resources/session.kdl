@@ -1,0 +1,44 @@
+// ==============================================================================
+// Conchy OS - Wayland User Session Configuration
+// Location: ~/.config/conchy/session.kdl or /etc/conchy/session.kdl
+// ==============================================================================
+
+session {
+    socket-wait-timeout 10
+    autostart true
+}
+
+env {
+    XCURSOR_SIZE "24"
+}
+
+compositor "conchy-wm"
+
+// ==============================================================================
+// Supervised Services (restarted automatically on crash)
+// ==============================================================================
+
+service "pipewire" {
+    command "pipewire"
+    restart "always"
+    wait-for-wayland false
+}
+
+service "wireplumber" {
+    command "wireplumber"
+    restart "always"
+    wait-for-wayland false
+}
+
+service "conchy-config" {
+    command "conchy-config"
+    args "daemon"
+    restart "always"
+    wait-for-wayland false
+}
+
+service "conchy-shell" {
+    command "conchy-shell"
+    restart "always"
+    wait-for-wayland true
+}

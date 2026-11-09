@@ -13,6 +13,8 @@ thiserror = "2.0"
 clap = { version = "4.5", features = ["derive", "env"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
+kdl = "4.6"
+conchy-config = { path = "../config" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 libc = "0.2"

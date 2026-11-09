@@ -35,16 +35,8 @@ async fn main() -> ExitCode {
     // Handle --dump-default-config flag
     if args.dump_default_config {
         let def = Config::default();
-        match def.to_toml_string() {
-            Ok(toml_str) => {
-                println!("{}", toml_str);
-                return ExitCode::SUCCESS;
-            }
-            Err(e) => {
-                eprintln!("Failed to generate default config: {}", e);
-                return ExitCode::FAILURE;
-            }
-        }
+        println!("{}", def.to_kdl_string());
+        return ExitCode::SUCCESS;
     }
 
     // Set up Linux subreaper and dedicated process group
