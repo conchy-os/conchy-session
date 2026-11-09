@@ -1,0 +1,71 @@
+# ==============================================================================
+# Conchy OS - Wayland User Session Configuration
+# Location: ~/.config/conchy/session.toml or /etc/conchy/session.toml
+# ==============================================================================
+
+[session]
+# Timeout (in seconds) to wait for the Wayland compositor socket to become ready
+socket_wait_timeout_secs = 10
+
+# Automatically launch XDG autostart applications (~/.config/autostart, /etc/xdg/autostart)
+autostart = true
+
+[session.env]
+# Custom environment variables exported into the session and synchronized with D-Bus
+# Standard Wayland variables (XDG_CURRENT_DESKTOP, QT_QPA_PLATFORM, etc.) are set automatically.
+# Example:
+# GDK_SCALE = "1"
+# XCURSOR_SIZE = "24"
+
+[compositor]
+# Wayland compositor executable
+command = "conchy-wm"
+args = []
+
+# Optional environment variables specifically for the compositor
+# [compositor.env]
+# WLR_NO_HARDWARE_CURSORS = "1"
+
+# ==============================================================================
+# Supervised Services
+# ==============================================================================
+# restart policy can be: "always", "on-failure", or "never"
+# wait_for_wayland: if true, waits until WAYLAND_DISPLAY is ready before starting
+
+[[services]]
+name = "pipewire"
+command = "pipewire"
+args = []
+restart = "always"
+restart_delay_ms = 1000
+max_restarts = 10
+restart_window_secs = 60
+wait_for_wayland = false
+
+[[services]]
+name = "wireplumber"
+command = "wireplumber"
+args = []
+restart = "always"
+restart_delay_ms = 1000
+max_restarts = 10
+restart_window_secs = 60
+wait_for_wayland = false
+
+[[services]]
+name = "conchy-shell"
+command = "conchy-shell"
+args = []
+restart = "always"
+restart_delay_ms = 1000
+max_restarts = 5
+restart_window_secs = 60
+wait_for_wayland = true
+
+# Polkit authentication agent (uncomment or customize if needed)
+# [[services]]
+# name = "polkit-agent"
+# command = "/usr/libexec/polkit-gnome-authentication-agent-1"
+# args = []
+# restart = "always"
+# wait_for_wayland = true

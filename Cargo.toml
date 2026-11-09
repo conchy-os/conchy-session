@@ -1,0 +1,38 @@
+[package]
+name = "conchy-session"
+version = "0.1.0"
+edition = "2021"
+authors = ["Conchy OS Team"]
+description = "Lightweight Wayland user session orchestrator and process supervisor for Conchy OS / Void Linux"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/conchy-os/conchy-session"
+
+[dependencies]
+anyhow = "1.0"
+thiserror = "2.0"
+clap = { version = "4.5", features = ["derive", "env"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+libc = "0.2"
+nix = { version = "0.29", features = ["process", "signal", "user"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+tokio = { version = "1.43", features = [
+    "rt-multi-thread",
+    "macros",
+    "process",
+    "signal",
+    "time",
+    "sync",
+    "fs",
+    "io-util"
+] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = 3

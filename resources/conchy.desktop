@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Conchy
+Comment=Lightweight scrolling Wayland desktop environment for Conchy OS
+Exec=conchy-session
+Type=Application
+DesktopNames=conchy
+Keywords=wayland;compositor;scrolling;session;conchy;
