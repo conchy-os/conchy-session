@@ -21,7 +21,10 @@ pub fn setup_subreaper_and_process_group() -> Result<()> {
             err
         );
     } else {
-        info!("Established dedicated session process group with PGID {}", pid);
+        info!(
+            "Established dedicated session process group with PGID {}",
+            pid
+        );
     }
 
     // Set PR_SET_CHILD_SUBREAPER
@@ -43,7 +46,10 @@ pub fn setup_subreaper_and_process_group() -> Result<()> {
         if get_ret == 0 && is_subreaper == 1 {
             info!("Linux child subreaper active for PID {}", pid);
         } else {
-            debug!("PR_GET_CHILD_SUBREAPER verification returned {}", is_subreaper);
+            debug!(
+                "PR_GET_CHILD_SUBREAPER verification returned {}",
+                is_subreaper
+            );
         }
     }
 

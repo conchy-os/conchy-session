@@ -85,11 +85,16 @@ impl Supervisor {
             compositor_cmd.env(k, v);
         }
 
-        let mut compositor_child = compositor_cmd
-            .spawn()
-            .with_context(|| format!("Failed to spawn compositor: {}", self.config.compositor.command))?;
+        let mut compositor_child = compositor_cmd.spawn().with_context(|| {
+            format!(
+                "Failed to spawn compositor: {}",
+                self.config.compositor.command
+            )
+        })?;
 
-        let compositor_pid = compositor_child.id().context("Failed to get compositor PID")?;
+        let compositor_pid = compositor_child
+            .id()
+            .context("Failed to get compositor PID")?;
         self.tracked_pids.push(compositor_pid);
         info!("Compositor running with PID {}", compositor_pid);
 
@@ -103,9 +108,13 @@ impl Supervisor {
         {
             Ok(name) => name,
             Err(e) => {
-                error!("Wayland display failed to initialize: {}. Aborting session.", e);
+                error!(
+                    "Wayland display failed to initialize: {}. Aborting session.",
+                    e
+                );
                 let _ = compositor_child.kill().await;
-                TeardownManager::shutdown_processes(&self.tracked_pids, Duration::from_secs(2)).await?;
+                TeardownManager::shutdown_processes(&self.tracked_pids, Duration::from_secs(2))
+                    .await?;
                 bail!("Compositor initialization timed out");
             }
         };
@@ -239,7 +248,10 @@ impl Supervisor {
                 }
             }
             Err(e) => {
-                warn!("Failed to spawn autostart app '{}' ({}): {}", app.name, app.command, e);
+                warn!(
+                    "Failed to spawn autostart app '{}' ({}): {}",
+                    app.name, app.command, e
+                );
             }
         }
     }
@@ -285,7 +297,9 @@ impl Supervisor {
                             } else {
                                 error!(
                                     "Service '{}' exceeded max restarts ({} in {}s). Disabling.",
-                                    s.config.name, s.config.max_restarts, s.config.restart_window_secs
+                                    s.config.name,
+                                    s.config.max_restarts,
+                                    s.config.restart_window_secs
                                 );
                                 s.failed = true;
                             }
@@ -296,7 +310,10 @@ impl Supervisor {
                         s.child = Some(child);
                     }
                     Err(e) if e.raw_os_error() == Some(libc::ECHILD) => {
-                        warn!("Service '{}' exited and was collected by subreaper", s.config.name);
+                        warn!(
+                            "Service '{}' exited and was collected by subreaper",
+                            s.config.name
+                        );
                         s.pid = None;
 
                         let should_restart = match s.config.restart {
@@ -322,14 +339,19 @@ impl Supervisor {
                             } else {
                                 error!(
                                     "Service '{}' exceeded max restarts ({} in {}s). Disabling.",
-                                    s.config.name, s.config.max_restarts, s.config.restart_window_secs
+                                    s.config.name,
+                                    s.config.max_restarts,
+                                    s.config.restart_window_secs
                                 );
                                 s.failed = true;
                             }
                         }
                     }
                     Err(e) => {
-                        warn!("Error checking status for service '{}': {}", s.config.name, e);
+                        warn!(
+                            "Error checking status for service '{}': {}",
+                            s.config.name, e
+                        );
                     }
                 }
             }
@@ -346,9 +368,15 @@ impl Supervisor {
         info!("  [OK] Compositor configuration:");
         info!("       Command: {}", self.config.compositor.command);
         info!("       Args:    {:?}", self.config.compositor.args);
-        info!("       Binary exists in PATH: {}", Self::check_binary_exists(&self.config.compositor.command));
+        info!(
+            "       Binary exists in PATH: {}",
+            Self::check_binary_exists(&self.config.compositor.command)
+        );
 
-        info!("  [OK] Supervised Services ({}):", self.config.services.len());
+        info!(
+            "  [OK] Supervised Services ({}):",
+            self.config.services.len()
+        );
         for s in &self.config.services {
             let exists = Self::check_binary_exists(&s.command);
             info!(
@@ -359,7 +387,10 @@ impl Supervisor {
 
         if self.config.session.autostart {
             let apps = AutostartManager::collect_autostart_apps();
-            info!("  [OK] Discovered {} XDG autostart applications:", apps.len());
+            info!(
+                "  [OK] Discovered {} XDG autostart applications:",
+                apps.len()
+            );
             for app in apps {
                 info!("       - {:<20} ({})", app.name, app.command);
             }

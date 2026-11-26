@@ -93,7 +93,7 @@ mod tests {
     #[tokio::test]
     async fn test_teardown_processes() {
         // Spawn a dummy sleep process
-        let child = Command::new("sleep")
+        let mut child = Command::new("sleep")
             .arg("10")
             .spawn()
             .expect("Failed to spawn sleep");
@@ -105,5 +105,10 @@ mod tests {
         // Process should no longer exist
         let check = kill(Pid::from_raw(pid as i32), None);
         assert!(check.is_err());
+
+        // Reap/wait cleanly so no child handle remains unwaited
+        if let Err(err) = child.wait() {
+            assert_eq!(err.raw_os_error(), Some(libc::ECHILD));
+        }
     }
 }

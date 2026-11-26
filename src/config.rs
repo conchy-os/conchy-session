@@ -5,20 +5,17 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
-use conchy_config::schema::session::{default_session_kdl, parse_session_config, SessionConfig as KdlSessionConfig};
+use conchy_config::schema::session::{
+    default_session_kdl, parse_session_config, SessionConfig as KdlSessionConfig,
+};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RestartPolicy {
     Always,
+    #[default]
     OnFailure,
     Never,
-}
-
-impl Default for RestartPolicy {
-    fn default() -> Self {
-        Self::OnFailure
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,8 +176,9 @@ impl Config {
                 let doc: KdlDocument = content
                     .parse()
                     .with_context(|| format!("Failed to parse KDL syntax in {:?}", path))?;
-                let kdl_cfg = parse_session_config(&doc)
-                    .with_context(|| format!("Failed to validate KDL session config in {:?}", path))?;
+                let kdl_cfg = parse_session_config(&doc).with_context(|| {
+                    format!("Failed to validate KDL session config in {:?}", path)
+                })?;
                 return Ok(kdl_cfg.into());
             }
 
@@ -192,12 +190,30 @@ impl Config {
         // Standard search paths: prefer .kdl, fallback to .toml
         let mut candidates = Vec::new();
         if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-            candidates.push(PathBuf::from(&xdg_config).join("conchy").join("session.kdl"));
-            candidates.push(PathBuf::from(&xdg_config).join("conchy").join("session.toml"));
+            candidates.push(
+                PathBuf::from(&xdg_config)
+                    .join("conchy")
+                    .join("session.kdl"),
+            );
+            candidates.push(
+                PathBuf::from(&xdg_config)
+                    .join("conchy")
+                    .join("session.toml"),
+            );
         }
         if let Ok(home) = std::env::var("HOME") {
-            candidates.push(PathBuf::from(&home).join(".config").join("conchy").join("session.kdl"));
-            candidates.push(PathBuf::from(&home).join(".config").join("conchy").join("session.toml"));
+            candidates.push(
+                PathBuf::from(&home)
+                    .join(".config")
+                    .join("conchy")
+                    .join("session.kdl"),
+            );
+            candidates.push(
+                PathBuf::from(&home)
+                    .join(".config")
+                    .join("conchy")
+                    .join("session.toml"),
+            );
         }
         candidates.push(PathBuf::from("/etc/conchy/session.kdl"));
         candidates.push(PathBuf::from("/etc/conchy/session.toml"));
@@ -212,13 +228,15 @@ impl Config {
                     let doc: KdlDocument = content
                         .parse()
                         .with_context(|| format!("Failed to parse KDL syntax in {:?}", path))?;
-                    let kdl_cfg = parse_session_config(&doc)
-                        .with_context(|| format!("Failed to validate KDL session config in {:?}", path))?;
+                    let kdl_cfg = parse_session_config(&doc).with_context(|| {
+                        format!("Failed to validate KDL session config in {:?}", path)
+                    })?;
                     return Ok(kdl_cfg.into());
                 }
 
-                let config: Config = toml::from_str(&content)
-                    .with_context(|| format!("Failed to parse TOML configuration from {:?}", path))?;
+                let config: Config = toml::from_str(&content).with_context(|| {
+                    format!("Failed to parse TOML configuration from {:?}", path)
+                })?;
                 return Ok(config);
             }
         }

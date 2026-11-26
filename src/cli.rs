@@ -14,7 +14,7 @@ use std::path::PathBuf;
                   process group teardown on exit."
 )]
 pub struct Cli {
-    /// Path to session configuration file [default: $XDG_CONFIG_HOME/conchy/session.toml]
+    /// Path to session configuration file [default: $XDG_CONFIG_HOME/conchy/session.kdl (legacy session.toml fallback)]
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
@@ -30,7 +30,7 @@ pub struct Cli {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Print default session configuration (TOML) to stdout and exit
+    /// Print default session configuration (KDL) to stdout and exit
     #[arg(long)]
     pub dump_default_config: bool,
 

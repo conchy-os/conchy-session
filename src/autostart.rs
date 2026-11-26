@@ -64,7 +64,10 @@ impl AutostartManager {
                             apps.push(app);
                         }
                         Ok(None) => {
-                            debug!("Skipping autostart file {}: filtered or hidden", path.display());
+                            debug!(
+                                "Skipping autostart file {}: filtered or hidden",
+                                path.display()
+                            );
                         }
                         Err(e) => {
                             warn!("Failed to parse autostart file {}: {}", path.display(), e);
@@ -115,9 +118,10 @@ impl AutostartManager {
         // Our desktop identifier is "conchy"
         let current_desktop = "conchy";
         if let Some(only_show) = key_values.get("OnlyShowIn") {
-            let matched = only_show
-                .split(';')
-                .any(|d| d.trim().eq_ignore_ascii_case(current_desktop) || d.trim().eq_ignore_ascii_case("wlroots"));
+            let matched = only_show.split(';').any(|d| {
+                d.trim().eq_ignore_ascii_case(current_desktop)
+                    || d.trim().eq_ignore_ascii_case("wlroots")
+            });
             if !matched {
                 return Ok(None);
             }
@@ -287,6 +291,9 @@ mod tests {
         .unwrap();
 
         let app = AutostartManager::parse_desktop_file(file.path()).unwrap();
-        assert!(app.is_none(), "Should be skipped because conchy not in OnlyShowIn");
+        assert!(
+            app.is_none(),
+            "Should be skipped because conchy not in OnlyShowIn"
+        );
     }
 }

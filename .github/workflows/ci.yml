@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Void glibc (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    container: ghcr.io/void-linux/void-glibc-full:latest
+
+    steps:
+      - name: Install Void Linux toolchain and tools
+        shell: sh
+        run: xbps-install -Suy xbps && xbps-install -uy && xbps-install -y rust cargo git bash zstd && git config --global --add safe.directory '*'
+
+      - name: Checkout conchy-session
+        uses: actions/checkout@v4
+        with:
+          path: conchy-session
+
+      - name: Checkout conchy-config
+        uses: actions/checkout@v4
+        with:
+          repository: conchy-os/conchy-config
+          path: conchy-config
+
+      - name: Link config sibling directory
+        shell: sh
+        run: ln -sfn conchy-config config
+
+      - name: Cache Cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            conchy-session/target
+          key: void-glibc-${{ runner.os }}-${{ hashFiles('conchy-session/Cargo.lock') }}
+          restore-keys: |
+            void-glibc-${{ runner.os }}-
+
+      - name: Format check, clippy, and tests
+        working-directory: conchy-session
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace

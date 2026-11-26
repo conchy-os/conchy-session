@@ -39,6 +39,7 @@ service "conchy-config" {
 
 service "conchy-shell" {
     command "conchy-shell"
+    args "daemon"
     restart "always"
     wait-for-wayland true
 }

@@ -46,8 +46,9 @@ impl EnvironmentManager {
         // Fallback: create secure directory in /tmp/conchy-runtime-<uid>
         let fallback = PathBuf::from(format!("/tmp/conchy-runtime-{}", uid));
         if !fallback.exists() {
-            fs::create_dir_all(&fallback)
-                .with_context(|| format!("Failed to create fallback runtime dir at {:?}", fallback))?;
+            fs::create_dir_all(&fallback).with_context(|| {
+                format!("Failed to create fallback runtime dir at {:?}", fallback)
+            })?;
             fs::set_permissions(&fallback, fs::Permissions::from_mode(0o700))
                 .with_context(|| format!("Failed to set permissions 0700 on {:?}", fallback))?;
             info!(
@@ -127,7 +128,8 @@ mod tests {
 
     #[test]
     fn test_ensure_runtime_dir() {
-        let dir = EnvironmentManager::ensure_xdg_runtime_dir().expect("Should determine runtime dir");
+        let dir =
+            EnvironmentManager::ensure_xdg_runtime_dir().expect("Should determine runtime dir");
         assert!(dir.is_dir());
     }
 
