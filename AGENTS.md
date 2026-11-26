@@ -50,8 +50,9 @@ Guidance for AI coding agents and contributors working in `/home/michael/Project
 - **Configuration format**: `session.kdl` is the primary format (`$XDG_CONFIG_HOME/conchy/session.kdl`, `~/.config/conchy/session.kdl`, `/etc/conchy/session.kdl`), parsed via `conchy_config::schema::session`. `session.toml` is retained only as a legacy fallback.
 
 ### Code & Resource Layout
-- `src/main.rs` — entrypoint, tracing initialization, `--dump-default-config`, subreaper setup, config loading, CLI overrides, and supervisor invocation.
-- `src/cli.rs` — `clap` CLI definitions (`-c`/`--config`, `--compositor`, `--no-autostart`, `--dry-run`, `--dump-default-config`, `-l`/`--log-level`).
+- `src/main.rs` — entrypoint, `logs` CLI dispatch, tracing initialization (`stderr` + rotating `session.log`), `--dump-default-config`, subreaper setup, config loading, CLI overrides, and supervisor invocation.
+- `src/cli.rs` — `clap` CLI definitions (`logs` subcommand, `-c`/`--config`, `--compositor`, `--no-autostart`, `--dry-run`, `--dump-default-config`, `-l`/`--log-level`).
+- `src/logs.rs` — rotating `session.log` and per-service stdout/stderr file logs under `$XDG_STATE_HOME/conchy/logs`, lifecycle markers, and `conchy-session logs <service> [-f]`.
 - `src/config.rs` — `Config::load` (`.kdl` primary, `.toml` legacy fallback), `From<KdlSessionConfig>`, `RestartPolicy`, and `to_kdl_string()`.
 - `src/env.rs` — `EnvironmentManager`: `XDG_RUNTIME_DIR` validation/fallback, `XDG_CURRENT_DESKTOP=conchy` and Wayland toolkit variables, and D-Bus activation var list.
 - `src/dbus.rs` — `DbusManager`: session bus discovery/launch (`dbus-daemon --session`) and `org.freedesktop.DBus.UpdateActivationEnvironment`.

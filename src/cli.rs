@@ -1,5 +1,12 @@
-use clap::Parser;
+use crate::logs::LogsArgs;
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum Commands {
+    /// View or follow logs for the session or a supervised service
+    Logs(LogsArgs),
+}
 
 #[derive(Parser, Debug, Clone)]
 #[command(
@@ -9,11 +16,15 @@ use std::path::PathBuf;
     about = "Lightweight Wayland user session orchestrator and process supervisor for Conchy OS / Void Linux",
     long_about = "conchy-session manages a complete Wayland user session without depending on systemd --user.\n\
                   It configures desktop environment variables, manages the D-Bus activation environment,\n\
-                  launches the conchy-wm compositor, supervises essential services (pipewire, shell, polkit),\n\
+                  launches the conchy-wm compositor, supervises essential services (pipewire, shell, config),\n\
+                  writes per-service and session logs to ~/.local/state/conchy/logs,\n\
                   processes XDG autostart applications, acts as a Linux subreaper, and guarantees clean\n\
                   process group teardown on exit."
 )]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
     /// Path to session configuration file [default: $XDG_CONFIG_HOME/conchy/session.kdl (legacy session.toml fallback)]
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,

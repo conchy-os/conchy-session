@@ -32,6 +32,9 @@
    - **Политики перезапуска (`RestartPolicy`)**:
      - `always`, `on-failure`, `never`.
      - Защита от бесконечного цикла падений (*Crash loop protection*): в конфигурации `session.kdl` действуют встроенные лимиты — до `10` перезапусков в окне `60` с с задержкой `1000` мс (в legacy-формате `session.toml` эти параметры задаются явно).
+   - **Журналирование без `journald`**:
+     - Журнал самого оркестратора (старт/остановка служб, причины завершения с кодом/сигналом, счётчики перезапусков и срабатывание защиты от цикла падений) пишется в `$XDG_STATE_HOME/conchy/logs/session.log` (по умолчанию `~/.local/state/conchy/logs/session.log`) с ротацией по размеру (до 3 архивов `.1`–`.3` по 2 МиБ).
+     - `stdout` и `stderr` композитора и каждой управляемой службы перенаправляются в `<служба>.log` в том же каталоге с отметками `[conchy-session]` о запусках и падениях.
 
 4. **Поддержка спецификации XDG Autostart**:
    - Сканирует `$XDG_CONFIG_HOME/autostart` (иначе `~/.config/autostart`), `$XDG_CONFIG_DIRS/autostart` и `/etc/xdg/autostart` с перекрытием одноимённых файлов по приоритету каталогов.
@@ -78,8 +81,28 @@ conchy-session --compositor "conchy-wm --verbose"
 conchy-session --dry-run
 ```
 
+### Просмотр и отслеживание логов
+
+На Void Linux нет `journald`, поэтому `conchy-session` пишет журнал оркестратора в `$XDG_STATE_HOME/conchy/logs/session.log` (по умолчанию `~/.local/state/conchy/logs/session.log`), а `stdout` и `stderr` композитора и каждой службы — в `<служба>.log` в том же каталоге (ротация по размеру 2 МиБ, до 3 архивов `.1`–`.3`):
+
+```bash
+# Список доступных логов
+conchy-session logs
+
+# Показать лог службы или самой сессии
+conchy-session logs conchy-shell
+conchy-session logs session
+
+# Следить за логом в реальном времени (аналог tail -f, переживает ротацию)
+conchy-session logs conchy-shell -f
+
+# Последние 100 строк с учётом ротированных архивов
+conchy-session logs conchy-shell --all -n 100
+```
+
 ### Параметры командной строки
 
+- `logs [SERVICE]` — показать или отслеживать (`-f`/`--follow`, `-n`/`--lines`, `-a`/`--all`, `--list`) логи сессии (`session`) или конкретной службы.
 - `-c, --config <FILE>` — явный путь к файлу конфигурации (`.kdl` разбирается как KDL, любой другой файл — как legacy TOML; по умолчанию используется поиск `session.kdl` с откатом к `session.toml`).
 - `--compositor <COMMAND>` — переопределить команду запуска композитора (при наличии пробелов разбивается на исполняемый файл и аргументы).
 - `--no-autostart` — отключить запуск приложений из XDG Autostart (`~/.config/autostart`, `/etc/xdg/autostart`).
