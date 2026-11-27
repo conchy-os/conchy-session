@@ -62,10 +62,5 @@ max_restarts = 5
 restart_window_secs = 60
 wait_for_wayland = true
 
-# Polkit authentication agent (uncomment or customize if needed)
-# [[services]]
-# name = "polkit-agent"
-# command = "/usr/libexec/polkit-gnome-authentication-agent-1"
-# args = []
-# restart = "always"
-# wait_for_wayland = true
+# No separate polkit authentication agent: conchy-shell registers itself as
+# the session's agent and asks for the password in its own dialog.

@@ -28,7 +28,7 @@
    - **Фазовый запуск**:
      - *Pre-Wayland* (`wait-for-wayland false`): запуск базовых фоновых служб до композитора (по умолчанию `pipewire`, `wireplumber`, `conchy-config daemon`).
      - *Compositor*: запуск `conchy-wm` и ожидание готовности сокета `wayland-N` в `$XDG_RUNTIME_DIR` (таймаут задаётся через `socket-wait-timeout`, по умолчанию `10` с).
-     - *Post-Wayland* (`wait-for-wayland true`): запуск оболочки (`conchy-shell daemon`) и дополнительных пользовательских сервисов (polkit-агенты, демон уведомлений и др.) сразу после готовности Wayland-сокета и синхронизации D-Bus.
+     - *Post-Wayland* (`wait-for-wayland true`): запуск оболочки (`conchy-shell daemon`, она же polkit-агент сессии) и дополнительных пользовательских сервисов (демон уведомлений и др.) сразу после готовности Wayland-сокета и синхронизации D-Bus.
    - **Политики перезапуска (`RestartPolicy`)**:
      - `always`, `on-failure`, `never`.
      - Защита от бесконечного цикла падений (*Crash loop protection*): в конфигурации `session.kdl` действуют встроенные лимиты — до `10` перезапусков в окне `60` с с задержкой `1000` мс (в legacy-формате `session.toml` эти параметры задаются явно).
