@@ -69,6 +69,51 @@ impl WaylandWatcher {
         )
     }
 
+    /// Waits for conchy-wm's IPC socket (`conchy.<wayland-socket>.<pid>.sock` in the runtime
+    /// dir) and exports it as `CONCHY_SOCKET` and `NIRI_SOCKET`. The compositor sets these only
+    /// for its own children, while the shell and other services are children of the session.
+    /// Returns `None` for compositors without this IPC (after `timeout`).
+    pub async fn export_compositor_ipc(
+        runtime_dir: &Path,
+        wayland_socket: &str,
+        compositor_pid: u32,
+        timeout: Duration,
+    ) -> Option<PathBuf> {
+        let exact = runtime_dir.join(format!("conchy.{wayland_socket}.{compositor_pid}.sock"));
+        // A wrapper script that does not `exec` changes the PID, so also accept any
+        // socket bound to this Wayland display.
+        let prefix = format!("conchy.{wayland_socket}.");
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let mut found = None;
+            if exact.exists() && Self::can_connect(&exact).await {
+                found = Some(exact.clone());
+            } else if let Ok(mut entries) = tokio::fs::read_dir(runtime_dir).await {
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with(&prefix)
+                        && name.ends_with(".sock")
+                        && Self::can_connect(&entry.path()).await
+                    {
+                        found = Some(entry.path());
+                        break;
+                    }
+                }
+            }
+            if let Some(path) = found {
+                info!("Compositor IPC socket: {}", path.display());
+                env::set_var("CONCHY_SOCKET", &path);
+                env::set_var("NIRI_SOCKET", &path);
+                return Some(path);
+            }
+            if std::time::Instant::now() >= deadline {
+                return None;
+            }
+            sleep(Duration::from_millis(50)).await;
+        }
+    }
+
     /// Tests if a unix socket path is connectable
     async fn can_connect(socket_path: &PathBuf) -> bool {
         match UnixStream::connect(socket_path).await {
@@ -110,5 +155,32 @@ mod tests {
         }
 
         handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_compositor_ipc_socket_found_by_display_name() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        // Different PID than the one we pass: found through the display-name prefix.
+        let sock = tmp_dir.path().join("conchy.wayland-7.4242.sock");
+        let _listener = UnixListener::bind(&sock).unwrap();
+        let _other = UnixListener::bind(tmp_dir.path().join("conchy.wayland-8.1.sock")).unwrap();
+
+        let found = WaylandWatcher::export_compositor_ipc(
+            tmp_dir.path(),
+            "wayland-7",
+            1,
+            Duration::from_secs(1),
+        )
+        .await;
+        assert_eq!(found.as_deref(), Some(sock.as_path()));
+
+        let none = WaylandWatcher::export_compositor_ipc(
+            tmp_dir.path(),
+            "wayland-9",
+            1,
+            Duration::from_millis(100),
+        )
+        .await;
+        assert!(none.is_none());
     }
 }

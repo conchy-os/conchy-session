@@ -158,6 +158,17 @@ fn test_logs_read_lines_and_rotated_archives() {
         String::from_utf8_lossy(&tail.stdout),
         "prev-2\ncur-1\ncur-2\n"
     );
+
+    let zero_means_all = Command::new(env!("CARGO_BIN_EXE_conchy-session"))
+        .args(["logs", "conchy-shell.log", "-n", "0"])
+        .env("XDG_STATE_HOME", &state_dir)
+        .output()
+        .unwrap();
+    assert!(zero_means_all.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&zero_means_all.stdout),
+        "oldest-1\noldest-2\nprev-1\nprev-2\ncur-1\ncur-2\n"
+    );
 }
 
 #[test]
@@ -219,10 +230,12 @@ fn test_session_captures_service_output_restart_reasons_and_crash_loop() {
     fs::create_dir_all(&cfg_dir).unwrap();
     fs::create_dir_all(&home_dir).unwrap();
 
-    // Bind a mock wayland-0 socket in the isolated XDG_RUNTIME_DIR
+    // Bind mock wayland-0 and compositor IPC sockets in the isolated XDG_RUNTIME_DIR
     let wayland_socket = runtime_dir.join("wayland-0");
     let listener = UnixListener::bind(&wayland_socket).unwrap();
     listener.set_nonblocking(true).unwrap();
+    let ipc_socket = runtime_dir.join("conchy.wayland-0.99999.sock");
+    let _ipc_listener = UnixListener::bind(&ipc_socket).unwrap();
     let stop_accept = Arc::new(AtomicBool::new(false));
     let stop_accept_thread = stop_accept.clone();
     let accept_handle = std::thread::spawn(move || {
@@ -247,7 +260,7 @@ fn test_session_captures_service_output_restart_reasons_and_crash_loop() {
     let shell_script = tmp.path().join("fake-shell");
     write_executable_script(
         &shell_script,
-        "#!/bin/sh\necho 'shell stdout booting'\necho 'shell stderr fatal error' >&2\nexit 42\n",
+        "#!/bin/sh\necho \"shell stdout booting socket=$CONCHY_SOCKET niri=$NIRI_SOCKET\"\necho 'shell stderr fatal error' >&2\nexit 42\n",
     );
 
     let sig_script = tmp.path().join("fake-sig");
@@ -347,7 +360,8 @@ wait_for_wayland = true
         .unwrap();
     assert!(shell_logs_cmd.status.success());
     let shell_logs = String::from_utf8_lossy(&shell_logs_cmd.stdout);
-    assert!(shell_logs.contains("shell stdout booting"));
+    let expected_ipc = ipc_socket.to_string_lossy().into_owned();
+    assert!(shell_logs.contains(&format!("socket={expected_ipc} niri={expected_ipc}")));
     assert!(shell_logs.contains("shell stderr fatal error"));
     assert!(shell_logs.contains("exited with non-zero code 42"));
     assert!(shell_logs.contains("scheduling restart #1 (1/2 in 60s window)"));

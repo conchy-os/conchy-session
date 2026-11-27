@@ -52,16 +52,16 @@ Guidance for AI coding agents and contributors working in `/home/michael/Project
 ### Code & Resource Layout
 - `src/main.rs` — entrypoint, `logs` CLI dispatch, tracing initialization (`stderr` + rotating `session.log`), `--dump-default-config`, subreaper setup, config loading, CLI overrides, and supervisor invocation.
 - `src/cli.rs` — `clap` CLI definitions (`logs` subcommand, `-c`/`--config`, `--compositor`, `--no-autostart`, `--dry-run`, `--dump-default-config`, `-l`/`--log-level`).
-- `src/logs.rs` — rotating `session.log` and per-service stdout/stderr file logs under `$XDG_STATE_HOME/conchy/logs`, lifecycle markers, and `conchy-session logs <service> [-f]`.
+- `src/logs.rs` — rotating `session.log`, `autostart.log`, and per-service/compositor line-timestamped logs under `$XDG_STATE_HOME/conchy/logs` (`0700`/`0600`), ANSI stripping, lifecycle markers, and `conchy-session logs <service> [-f]`.
 - `src/config.rs` — `Config::load` (`.kdl` primary, `.toml` legacy fallback), `From<KdlSessionConfig>`, `RestartPolicy`, and `to_kdl_string()`.
-- `src/env.rs` — `EnvironmentManager`: `XDG_RUNTIME_DIR` validation/fallback, `XDG_CURRENT_DESKTOP=conchy` and Wayland toolkit variables, and D-Bus activation var list.
+- `src/env.rs` — `EnvironmentManager`: `XDG_RUNTIME_DIR` validation/fallback, `XDG_CURRENT_DESKTOP=conchy` and Wayland toolkit variables, and D-Bus activation var list (including `CONCHY_SOCKET`/`NIRI_SOCKET`).
 - `src/dbus.rs` — `DbusManager`: session bus discovery/launch (`dbus-daemon --session`) and `org.freedesktop.DBus.UpdateActivationEnvironment`.
 - `src/subreaper.rs` — `setpgid(0, 0)` and `prctl(PR_SET_CHILD_SUBREAPER, 1)`.
 - `src/supervisor.rs` — `Supervisor`: `--dry-run` validation, phased service startup (pre-Wayland, compositor, post-Wayland), XDG autostart launch, crash-loop-protected restart loop, signal handling (`SIGTERM`/`SIGINT`/`SIGHUP`).
-- `src/wayland.rs` — `WaylandWatcher`: polls `$XDG_RUNTIME_DIR/wayland-*` for socket readiness.
+- `src/wayland.rs` — `WaylandWatcher`: polls `$XDG_RUNTIME_DIR/wayland-*` for socket readiness and exports compositor IPC socket (`CONCHY_SOCKET`/`NIRI_SOCKET`).
 - `src/autostart.rs` — `AutostartManager`: XDG Desktop Application Autostart spec parser (`OnlyShowIn` `conchy`/`wlroots`, `NotShowIn`, `TryExec`, `Hidden`, `%` field-code stripping).
 - `src/teardown.rs` — `TeardownManager`: `SIGTERM` grace period -> `SIGKILL` escalation and `waitpid(-1, ..., WNOHANG)` zombie reaping.
-- `tests/integration.rs` — CLI binary integration tests (`--help`, `--dump-default-config`, `--dry-run`).
+- `tests/integration.rs` — CLI and isolated end-to-end session integration tests (`--help`, `--dump-default-config`, `--dry-run`, `logs`, rotation `-f`, IPC socket export, crash-loop logging).
 - `resources/conchy.desktop` — `/usr/share/wayland-sessions/conchy.desktop` (`Exec=conchy-session`, `DesktopNames=conchy`).
 - `resources/session.kdl` — reference default KDL session config; `resources/session.toml` — legacy TOML reference.
 

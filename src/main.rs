@@ -120,11 +120,13 @@ async fn main() -> ExitCode {
 
 fn init_tracing(filter: EnvFilter, session_writer: Option<SharedRotatingWriter>) {
     let stderr_layer = tracing_subscriber::fmt::layer()
+        .with_timer(logs::LocalTime)
         .with_writer(std::io::stderr)
         .with_target(false);
 
     let file_layer = session_writer.map(|writer| {
         tracing_subscriber::fmt::layer()
+            .with_timer(logs::LocalTime)
             .with_writer(writer)
             .with_target(false)
             .with_ansi(false)

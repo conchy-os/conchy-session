@@ -110,6 +110,8 @@ impl EnvironmentManager {
             "GDK_BACKEND",
             "MOZ_ENABLE_WAYLAND",
             "ELECTRON_OZONE_PLATFORM_HINT",
+            "CONCHY_SOCKET",
+            "NIRI_SOCKET",
         ];
 
         let mut vars = Vec::new();

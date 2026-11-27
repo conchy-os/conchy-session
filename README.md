@@ -18,10 +18,10 @@
    - Включает режим Linux Subreaper (`prctl(PR_SET_CHILD_SUBREAPER, 1)`): отсоединившиеся дочерние демоны и приложения переподчиняются процессу `conchy-session`, гарантируя сбор зомби-процессов.
    - Переводит процесс в изолированную группу процессов (`setpgid(0, 0)`).
 
-2. **Переменные окружения и D-Bus Activation Environment Sync**:
-   - Устанавливает стандартные переменные Wayland-окружения (`XDG_CURRENT_DESKTOP=conchy`, `XDG_SESSION_DESKTOP=conchy`, `XDG_SESSION_TYPE=wayland`, `DESKTOP_SESSION=conchy`, `QT_QPA_PLATFORM=wayland;xcb`, `QT_WAYLAND_DISABLE_WINDOWDECORATION=1`, `GDK_BACKEND=wayland,x11,*`, `SDL_VIDEODRIVER=wayland`, `CLUTTER_BACKEND=wayland`, `MOZ_ENABLE_WAYLAND=1`, `ELECTRON_OZONE_PLATFORM_HINT=auto`, `_JAVA_AWT_WM_NONREPARENTING=1`) и пользовательские переопределения из секции `env`.
-   - Проверяет `DBUS_SESSION_BUS_ADDRESS` и `$XDG_RUNTIME_DIR/bus`, при необходимости запускает `dbus-daemon --session --fork --print-address`.
-   - После готовности сокета Wayland экспортирует ключевые переменные сессии (`XDG_CURRENT_DESKTOP`, `XDG_SESSION_DESKTOP`, `XDG_SESSION_TYPE`, `DESKTOP_SESSION`, `WAYLAND_DISPLAY`, `DISPLAY`, `XDG_RUNTIME_DIR`, `QT_QPA_PLATFORM`, `GDK_BACKEND`, `MOZ_ENABLE_WAYLAND`, `ELECTRON_OZONE_PLATFORM_HINT`) в окружение активации D-Bus через `org.freedesktop.DBus.UpdateActivationEnvironment`.
+   - **Переменные окружения и D-Bus Activation Environment Sync**:
+     - Устанавливает стандартные переменные Wayland-окружения (`XDG_CURRENT_DESKTOP=conchy`, `XDG_SESSION_DESKTOP=conchy`, `XDG_SESSION_TYPE=wayland`, `DESKTOP_SESSION=conchy`, `QT_QPA_PLATFORM=wayland;xcb`, `QT_WAYLAND_DISABLE_WINDOWDECORATION=1`, `GDK_BACKEND=wayland,x11,*`, `SDL_VIDEODRIVER=wayland`, `CLUTTER_BACKEND=wayland`, `MOZ_ENABLE_WAYLAND=1`, `ELECTRON_OZONE_PLATFORM_HINT=auto`, `_JAVA_AWT_WM_NONREPARENTING=1`) и пользовательские переопределения из секции `env`.
+     - Проверяет `DBUS_SESSION_BUS_ADDRESS` и `$XDG_RUNTIME_DIR/bus`, при необходимости запускает `dbus-daemon --session --fork --print-address`.
+     - После готовности сокета Wayland находит IPC-сокет композитора (`$XDG_RUNTIME_DIR/conchy.<display>.<pid>.sock`), выставляет `CONCHY_SOCKET` / `NIRI_SOCKET` для служб сессии и экспортирует ключевые переменные сессии (включая `WAYLAND_DISPLAY`, `CONCHY_SOCKET`, `NIRI_SOCKET`) в окружение активации D-Bus через `org.freedesktop.DBus.UpdateActivationEnvironment`.
    - Обеспечивает корректную работу `xdg-desktop-portal`, polkit-агентов, браузеров и Flatpak-приложений.
 
 3. **Оркестрация и супервизия сервисов**:
@@ -33,8 +33,10 @@
      - `always`, `on-failure`, `never`.
      - Защита от бесконечного цикла падений (*Crash loop protection*): в конфигурации `session.kdl` действуют встроенные лимиты — до `10` перезапусков в окне `60` с с задержкой `1000` мс (в legacy-формате `session.toml` эти параметры задаются явно).
    - **Журналирование без `journald`**:
-     - Журнал самого оркестратора (старт/остановка служб, причины завершения с кодом/сигналом, счётчики перезапусков и срабатывание защиты от цикла падений) пишется в `$XDG_STATE_HOME/conchy/logs/session.log` (по умолчанию `~/.local/state/conchy/logs/session.log`) с ротацией по размеру (до 3 архивов `.1`–`.3` по 2 МиБ).
-     - `stdout` и `stderr` композитора и каждой управляемой службы перенаправляются в `<служба>.log` в том же каталоге с отметками `[conchy-session]` о запусках и падениях.
+     - Каталог `$XDG_STATE_HOME/conchy/logs/` (по умолчанию `~/.local/state/conchy/logs/`, права `0700` на каталог и `0600` на файлы).
+     - Журнал самого оркестратора (`session.log`) фиксирует старт/остановку служб, причины завершения с кодом/сигналом (`SIGSEGV`, `SIGABRT` и т. д.), счётчики перезапусков и срабатывание защиты от цикла падений.
+     - `stdout` и `stderr` композитора (`conchy-wm.log`) и каждой управляемой службы (`<служба>.log`) записываются построчно с локальными таймстампами, очисткой ANSI-последовательностей и отметками `[conchy-session]`. Вывод приложений из XDG Autostart пишется в `autostart.log` с тегом `[<имя>]`.
+     - Ротация по размеру: до 3 архивов `.1`–`.3` по 2 МиБ; `--dry-run` и `--dump-default-config` файлы логов не создают.
 
 4. **Поддержка спецификации XDG Autostart**:
    - Сканирует `$XDG_CONFIG_HOME/autostart` (иначе `~/.config/autostart`), `$XDG_CONFIG_DIRS/autostart` и `/etc/xdg/autostart` с перекрытием одноимённых файлов по приоритету каталогов.
@@ -83,26 +85,28 @@ conchy-session --dry-run
 
 ### Просмотр и отслеживание логов
 
-На Void Linux нет `journald`, поэтому `conchy-session` пишет журнал оркестратора в `$XDG_STATE_HOME/conchy/logs/session.log` (по умолчанию `~/.local/state/conchy/logs/session.log`), а `stdout` и `stderr` композитора и каждой службы — в `<служба>.log` в том же каталоге (ротация по размеру 2 МиБ, до 3 архивов `.1`–`.3`):
+На Void Linux нет `journald`, поэтому `conchy-session` пишет журнал оркестратора в `$XDG_STATE_HOME/conchy/logs/session.log` (по умолчанию `~/.local/state/conchy/logs/session.log`), вывод приложений XDG Autostart в `autostart.log`, а `stdout` и `stderr` композитора и каждой службы — в `<служба>.log` в том же каталоге (ротация по размеру 2 МиБ, до 3 архивов `.1`–`.3`):
 
 ```bash
-# Список доступных логов
+# Список доступных логов (размер, возраст, число архивов)
 conchy-session logs
 
-# Показать лог службы или самой сессии
+# Показать лог службы, самой сессии или автозапуска
 conchy-session logs conchy-shell
 conchy-session logs session
+conchy-session logs autostart
 
 # Следить за логом в реальном времени (аналог tail -f, переживает ротацию)
 conchy-session logs conchy-shell -f
 
-# Последние 100 строк с учётом ротированных архивов
+# Последние 100 строк с учётом ротированных архивов (или -n 0 для всей истории)
 conchy-session logs conchy-shell --all -n 100
+conchy-session logs conchy-shell -n 0
 ```
 
 ### Параметры командной строки
 
-- `logs [SERVICE]` — показать или отслеживать (`-f`/`--follow`, `-n`/`--lines`, `-a`/`--all`, `--list`) логи сессии (`session`) или конкретной службы.
+- `logs [SERVICE]` — показать или отслеживать (`-f`/`--follow`, `-n`/`--lines`, `-a`/`--all`, `--list`) логи сессии (`session`), автозапуска (`autostart`) или конкретной службы.
 - `-c, --config <FILE>` — явный путь к файлу конфигурации (`.kdl` разбирается как KDL, любой другой файл — как legacy TOML; по умолчанию используется поиск `session.kdl` с откатом к `session.toml`).
 - `--compositor <COMMAND>` — переопределить команду запуска композитора (при наличии пробелов разбивается на исполняемый файл и аргументы).
 - `--no-autostart` — отключить запуск приложений из XDG Autostart (`~/.config/autostart`, `/etc/xdg/autostart`).

@@ -17,7 +17,7 @@ use crate::dbus::DbusManager;
 use crate::env::EnvironmentManager;
 use crate::logs::{
     compositor_log_stem, resolve_log_dir, sanitize_service_log_stem, spawn_output_pump,
-    SharedRotatingWriter,
+    SharedRotatingWriter, AUTOSTART_LOG_STEM,
 };
 use crate::teardown::TeardownManager;
 use crate::wayland::WaylandWatcher;
@@ -137,10 +137,10 @@ impl Supervisor {
 
         if let Some(writer) = &compositor_log {
             if let Some(stdout) = compositor_child.stdout.take() {
-                log_pumps.push(spawn_output_pump(stdout, writer.clone()));
+                log_pumps.push(spawn_output_pump(stdout, writer.clone(), None));
             }
             if let Some(stderr) = compositor_child.stderr.take() {
-                log_pumps.push(spawn_output_pump(stderr, writer.clone()));
+                log_pumps.push(spawn_output_pump(stderr, writer.clone(), None));
             }
         }
 
@@ -156,7 +156,7 @@ impl Supervisor {
             ));
         }
 
-        // 6. Wait for Wayland socket to become ready
+        // 6. Wait for Wayland socket to become ready and export compositor IPC socket
         let socket_name = match WaylandWatcher::wait_for_display(
             &runtime_dir,
             None,
@@ -185,6 +185,17 @@ impl Supervisor {
         };
 
         info!("Wayland compositor is ready on {}", socket_name);
+        if WaylandWatcher::export_compositor_ipc(
+            &runtime_dir,
+            &socket_name,
+            compositor_pid,
+            Duration::from_secs(self.config.session.socket_wait_timeout_secs.min(5)),
+        )
+        .await
+        .is_none()
+        {
+            warn!("Compositor IPC socket not found: CONCHY_SOCKET is not set for services");
+        }
 
         // 7. Synchronize environment with D-Bus activation
         let activation_vars = EnvironmentManager::get_core_activation_vars();
@@ -199,11 +210,20 @@ impl Supervisor {
             }
         }
 
-        // 9. Launch XDG autostart apps if enabled
+        // 9. Launch XDG autostart apps if enabled, capturing output into autostart.log
         if self.config.session.autostart {
             let autostart_apps = AutostartManager::collect_autostart_apps();
-            for app in autostart_apps {
-                Self::spawn_autostart_app(app, &mut self.tracked_pids);
+            if !autostart_apps.is_empty() {
+                let autostart_log =
+                    Self::open_log_writer(&self.log_dir, AUTOSTART_LOG_STEM, "autostart");
+                for app in autostart_apps {
+                    Self::spawn_autostart_app(
+                        app,
+                        &mut self.tracked_pids,
+                        autostart_log.as_ref(),
+                        &mut log_pumps,
+                    );
+                }
             }
         }
 
@@ -352,10 +372,10 @@ impl Supervisor {
             Ok(mut child) => {
                 if let Some(writer) = &service.log_writer {
                     if let Some(stdout) = child.stdout.take() {
-                        log_pumps.push(spawn_output_pump(stdout, writer.clone()));
+                        log_pumps.push(spawn_output_pump(stdout, writer.clone(), None));
                     }
                     if let Some(stderr) = child.stderr.take() {
-                        log_pumps.push(spawn_output_pump(stderr, writer.clone()));
+                        log_pumps.push(spawn_output_pump(stderr, writer.clone(), None));
                     }
                 }
 
@@ -413,23 +433,57 @@ impl Supervisor {
         }
     }
 
-    /// Spawns a standalone autostart app
-    fn spawn_autostart_app(app: AutostartApp, tracked_pids: &mut Vec<u32>) {
+    /// Spawns a standalone autostart app and captures output into `autostart.log`
+    fn spawn_autostart_app(
+        app: AutostartApp,
+        tracked_pids: &mut Vec<u32>,
+        autostart_log: Option<&SharedRotatingWriter>,
+        log_pumps: &mut Vec<JoinHandle<()>>,
+    ) {
         let mut cmd = Command::new(&app.command);
         cmd.args(&app.args);
+        if autostart_log.is_some() {
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        }
 
         match cmd.spawn() {
-            Ok(child) => {
+            Ok(mut child) => {
+                if let Some(writer) = autostart_log {
+                    if let Some(stdout) = child.stdout.take() {
+                        log_pumps.push(spawn_output_pump(
+                            stdout,
+                            writer.clone(),
+                            Some(app.name.clone()),
+                        ));
+                    }
+                    if let Some(stderr) = child.stderr.take() {
+                        log_pumps.push(spawn_output_pump(
+                            stderr,
+                            writer.clone(),
+                            Some(app.name.clone()),
+                        ));
+                    }
+                }
                 if let Some(pid) = child.id() {
                     debug!("Spawned autostart app '{}' with PID {}", app.name, pid);
+                    if let Some(writer) = autostart_log {
+                        let _ = writer.write_marker(&format!(
+                            "Started autostart '{}' (command: '{}', args: {:?}, pid: {})",
+                            app.name, app.command, app.args, pid
+                        ));
+                    }
                     tracked_pids.push(pid);
                 }
             }
             Err(e) => {
-                warn!(
+                let msg = format!(
                     "Failed to spawn autostart app '{}' ({}): {}",
                     app.name, app.command, e
                 );
+                warn!("{}", msg);
+                if let Some(writer) = autostart_log {
+                    let _ = writer.write_marker(&msg);
+                }
             }
         }
     }
@@ -475,6 +529,7 @@ impl Supervisor {
                             "Error checking status for service '{}': {}",
                             s.config.name, e
                         );
+                        s.child = Some(child);
                     }
                 }
             }
@@ -709,7 +764,6 @@ mod tests {
         let mut svc = make_service(RestartPolicy::Always, 2, log_path.clone());
         let now = Instant::now();
 
-        // Exit 1 -> restart #1
         Supervisor::handle_service_exit(
             &mut svc,
             ExitOutcome::Status(ExitStatus::from_raw(1 << 8)),
@@ -719,7 +773,6 @@ mod tests {
         assert_eq!(svc.total_restarts, 1);
         assert!(svc.pending_restart_at.is_some());
 
-        // Exit 2 (SIGSEGV) -> restart #2
         Supervisor::handle_service_exit(
             &mut svc,
             ExitOutcome::Status(ExitStatus::from_raw(libc::SIGSEGV)),
@@ -729,7 +782,6 @@ mod tests {
         assert_eq!(svc.total_restarts, 2);
         assert!(svc.pending_restart_at.is_some());
 
-        // Exit 3 -> crash-loop protection triggers
         Supervisor::handle_service_exit(
             &mut svc,
             ExitOutcome::Status(ExitStatus::from_raw(libc::SIGABRT)),
@@ -767,5 +819,35 @@ mod tests {
         let log_contents = std::fs::read_to_string(&log_path).unwrap();
         assert!(log_contents.contains("exited cleanly (code 0)"));
         assert!(log_contents.contains("not restarting"));
+    }
+
+    #[tokio::test]
+    async fn test_autostart_app_logs_tagged_output() {
+        let tmp = tempfile::tempdir().unwrap();
+        let autostart_path = tmp.path().join("autostart.log");
+        let writer = SharedRotatingWriter::open_default(autostart_path.clone()).unwrap();
+        let mut pids = Vec::new();
+        let mut pumps = Vec::new();
+
+        Supervisor::spawn_autostart_app(
+            AutostartApp {
+                name: "Demo App".to_string(),
+                command: "sh".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    "echo autostart-out; echo autostart-err >&2".to_string(),
+                ],
+            },
+            &mut pids,
+            Some(&writer),
+            &mut pumps,
+        );
+        assert_eq!(pids.len(), 1);
+        Supervisor::drain_log_pumps(pumps).await;
+
+        let text = std::fs::read_to_string(&autostart_path).unwrap();
+        assert!(text.contains("[conchy-session] Started autostart 'Demo App'"));
+        assert!(text.contains("[Demo App] autostart-out"));
+        assert!(text.contains("[Demo App] autostart-err"));
     }
 }
